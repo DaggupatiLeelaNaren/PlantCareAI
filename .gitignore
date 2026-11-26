@@ -4,3 +4,17 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+# Dependencies
+node_modules/
+
+# Local development data
+.local/
+uploads/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Build output
+build/
