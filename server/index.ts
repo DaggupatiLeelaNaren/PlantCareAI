@@ -67,15 +67,44 @@ app.use((req, res, next) => {
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  // Default to 5000 if not specified.
+  const port = parseInt(process.env.PORT || "5000", 10);
+
+  // Try binding to a list of hosts. On some Windows environments binding to
+  // 0.0.0.0 can throw ENOTSUP (operation not supported). In that case we
+  // automatically retry on localhost and 127.0.0.1 so the dev server still works.
+  const hostsToTry = [process.env.HOST || "0.0.0.0", "localhost", "127.0.0.1"];
+  let tryIndex = 0;
+
+  const tryListen = () => {
+    const host = hostsToTry[tryIndex++] || "localhost";
+
+    const onError = (err: NodeJS.ErrnoException) => {
+      // If the error is ENOTSUP, try the next host in the list.
+      if (err && err.code === "ENOTSUP" && tryIndex < hostsToTry.length) {
+        log(`listen on ${host}:${port} failed (${err.code}), retrying on ${hostsToTry[tryIndex]}...`);
+        server.off("error", onError);
+        tryListen();
+        return;
+      }
+
+      // Otherwise print and exit so we don't crash with an uncaught error.
+      console.error("Server listen error:", err);
+      process.exit(1);
+    };
+
+    server.once("error", onError);
+    server.listen({ port, host }, () => {
+      server.off("error", onError);
+      // If we bound to 0.0.0.0 (INADDR_ANY) the browser can't connect to
+      // that literal address — suggest localhost which routes to the same
+      // interface for local development.
+      const displayHost = host === "0.0.0.0" ? "localhost" : host;
+      log(`✅ Server running on http://${host}:${port} — open http://${displayHost}:${port}`);
+    });
+  };
+
+  tryListen();
+
+
 })();
